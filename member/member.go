@@ -7,8 +7,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const RPC_ADDR = "rpc_addr"
+
 type EventHandler interface {
-	OnJoin(serf.Member) error
+	OnJoin(member serf.Member, rpcAddr string) error
 	OnLeave(serf.Member) error
 	OnUpdate(serf.Member) error
 }
@@ -33,18 +35,22 @@ func NewMember(config Config, handler EventHandler, logger *zap.Logger) (*Member
 		logger = zap.L().Named("member")
 	}
 
-	c := &Member{
+	m := &Member{
 		handler: handler,
 		Config:  config,
 		logger:  logger,
 		eventCh: make(chan serf.Event),
 	}
 
-	err := c.setupSerf()
+	m.Tags = map[string]string{
+		RPC_ADDR: config.BindAddr,
+	}
+
+	err := m.setupSerf()
 	if err != nil {
 		return nil, err
 	}
-	return c, nil
+	return m, nil
 }
 
 func (m *Member) Members() []serf.Member {
@@ -144,8 +150,9 @@ func (m *Member) handleUpdate(member serf.Member) {
 	}
 }
 
+// TODO: make rpc address a parameter
 func (m *Member) handleJoin(member serf.Member) {
-	if err := m.handler.OnJoin(member); err != nil {
+	if err := m.handler.OnJoin(member, member.Tags[RPC_ADDR]); err != nil {
 		m.logError(err, "fail to join", member.Name)
 	}
 }

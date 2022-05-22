@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	boltdb "github.com/hashicorp/raft-boltdb"
+	"github.com/hashicorp/serf/serf"
 )
 
 const INITIALIZED int32 = 1
@@ -20,10 +21,7 @@ type DistNode struct {
 	initialized int32
 }
 
-func NewDistNode(dataDir string, config Config) (
-	*DistNode,
-	error,
-) {
+func NewDistNode(dataDir string, config Config) (*DistNode, error) {
 	g := &DistNode{
 		config: config,
 	}
@@ -33,31 +31,83 @@ func NewDistNode(dataDir string, config Config) (
 	return g, nil
 }
 
-func (n *DistNode) Join(id, addr string) error {
-	configFuture := n.raft.GetConfiguration()
-	if err := configFuture.Error(); err != nil {
+func (n *DistNode) OnJoin(member serf.Member, addr string) error {
+	return n.Join(member.Name, addr)
+}
+
+func (n *DistNode) OnUpdate(member serf.Member) error {
+	return nil
+}
+
+func (n *DistNode) OnLeave(member serf.Member) error {
+	return n.Leave(member.Name)
+}
+
+func (n *DistNode) Shutdown() error {
+	future := n.raft.Shutdown()
+	if err := future.Error(); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (n *DistNode) LocalAddr() net.Addr {
+	return n.config.Raft.StreamLayer.ln.Addr()
+}
+
+func (n *DistNode) ListServers() ([]raft.Server, error) {
+	configFuture := n.raft.GetConfiguration()
+	if err := configFuture.Error(); err != nil {
+		return nil, err
+	}
+	return configFuture.Configuration().Servers, nil
+}
+
+func (n *DistNode) Leave(id string) error {
+	removeFuture := n.raft.RemoveServer(raft.ServerID(id), 0, 0)
+	return removeFuture.Error()
+}
+
+func (n *DistNode) Join(id, addr string) error {
+	servers, err := n.ListServers()
+	if err != nil {
+		return err
+	}
+
 	serverID := raft.ServerID(id)
 	serverAddr := raft.ServerAddress(addr)
-	for _, srv := range configFuture.Configuration().Servers {
+	for _, srv := range servers {
 		if srv.ID == serverID || srv.Address == serverAddr {
 			if srv.ID == serverID && srv.Address == serverAddr {
 				// server has already joined
 				return nil
 			}
 			// remove the existing server
-			removeFuture := n.raft.RemoveServer(serverID, 0, 0)
-			if err := removeFuture.Error(); err != nil {
+			if err := n.RemoveServer(serverID, 0, 0); err != nil {
 				return err
 			}
 		}
 	}
+
 	addFuture := n.raft.AddVoter(serverID, serverAddr, 0, 0)
 	if err := addFuture.Error(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (n *DistNode) RemoveServer(
+	id raft.ServerID, prevIndex uint64, timeout time.Duration,
+) error {
+	removeFuture := n.raft.RemoveServer(id, prevIndex, timeout)
+	if err := removeFuture.Error(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (n *DistNode) LeaderCh() <-chan bool {
+	return n.raft.LeaderCh()
 }
 
 func (n *DistNode) State() raft.RaftState {

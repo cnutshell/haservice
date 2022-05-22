@@ -102,7 +102,7 @@ type mockHandler struct {
 	numUpdate int32
 }
 
-func (h *mockHandler) OnJoin(member serf.Member) error {
+func (h *mockHandler) OnJoin(member serf.Member, addr string) error {
 	atomic.AddInt32(&h.numJoin, 1)
 	return nil
 }
