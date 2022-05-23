@@ -32,8 +32,8 @@ func TestMember(t *testing.T) {
 			1 == m1Handler.LeaveNum()
 	}, 3*time.Second, 250*time.Millisecond)
 
-	// assert that no label for m[0]
-	require.Equal(t, 0, len(m[0].GetLables()))
+	// assert number of label
+	require.Equal(t, 1, len(m[0].GetLables()))
 
 	tags := map[string]string{"hello": "world"}
 
@@ -83,6 +83,7 @@ func setupMember(t *testing.T, members []*Member) (
 	c := Config{
 		NodeName: fmt.Sprintf("%d", id),
 		BindAddr: addr,
+		RpcAddr:  addr,
 	}
 	h := &mockHandler{}
 	if len(members) > 0 {
@@ -102,7 +103,7 @@ type mockHandler struct {
 	numUpdate int32
 }
 
-func (h *mockHandler) OnJoin(member serf.Member, addr string) error {
+func (h *mockHandler) OnJoin(id, addr string, tags map[string]string) error {
 	atomic.AddInt32(&h.numJoin, 1)
 	return nil
 }

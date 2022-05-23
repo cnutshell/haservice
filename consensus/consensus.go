@@ -1,4 +1,4 @@
-package group
+package consensus
 
 import (
 	"fmt"
@@ -15,14 +15,14 @@ import (
 
 const INITIALIZED int32 = 1
 
-type DistNode struct {
+type RaftNode struct {
 	config      Config
 	raft        *raft.Raft
 	initialized int32
 }
 
-func NewDistNode(dataDir string, config Config) (*DistNode, error) {
-	g := &DistNode{
+func NewRaftNode(dataDir string, config Config) (*RaftNode, error) {
+	g := &RaftNode{
 		config: config,
 	}
 	if err := g.setupRaft(dataDir); err != nil {
@@ -31,19 +31,38 @@ func NewDistNode(dataDir string, config Config) (*DistNode, error) {
 	return g, nil
 }
 
-func (n *DistNode) OnJoin(member serf.Member, addr string) error {
-	return n.Join(member.Name, addr)
+func (n *RaftNode) OnJoin(
+	id, addr string, lables map[string]string,
+) error {
+	// if initialized, no need to join
+	if n.HasExistingState() {
+		return nil
+	}
+
+	// wait for leader
+	err := n.WaitForLeader(3 * time.Second)
+	if err != nil {
+		return err
+	}
+
+	err = n.Join(id, addr)
+	if err == raft.ErrNotLeader {
+		// only leader will success
+		return nil
+	}
+
+	return err
 }
 
-func (n *DistNode) OnUpdate(member serf.Member) error {
+func (n *RaftNode) OnUpdate(member serf.Member) error {
 	return nil
 }
 
-func (n *DistNode) OnLeave(member serf.Member) error {
-	return n.Leave(member.Name)
+func (n *RaftNode) OnLeave(member serf.Member) error {
+	return nil
 }
 
-func (n *DistNode) Shutdown() error {
+func (n *RaftNode) Shutdown() error {
 	future := n.raft.Shutdown()
 	if err := future.Error(); err != nil {
 		return err
@@ -51,11 +70,11 @@ func (n *DistNode) Shutdown() error {
 	return nil
 }
 
-func (n *DistNode) LocalAddr() net.Addr {
+func (n *RaftNode) LocalAddr() net.Addr {
 	return n.config.Raft.StreamLayer.ln.Addr()
 }
 
-func (n *DistNode) ListServers() ([]raft.Server, error) {
+func (n *RaftNode) ListServers() ([]raft.Server, error) {
 	configFuture := n.raft.GetConfiguration()
 	if err := configFuture.Error(); err != nil {
 		return nil, err
@@ -63,12 +82,12 @@ func (n *DistNode) ListServers() ([]raft.Server, error) {
 	return configFuture.Configuration().Servers, nil
 }
 
-func (n *DistNode) Leave(id string) error {
+func (n *RaftNode) Leave(id string) error {
 	removeFuture := n.raft.RemoveServer(raft.ServerID(id), 0, 0)
 	return removeFuture.Error()
 }
 
-func (n *DistNode) Join(id, addr string) error {
+func (n *RaftNode) Join(id, addr string) error {
 	servers, err := n.ListServers()
 	if err != nil {
 		return err
@@ -96,7 +115,7 @@ func (n *DistNode) Join(id, addr string) error {
 	return nil
 }
 
-func (n *DistNode) RemoveServer(
+func (n *RaftNode) RemoveServer(
 	id raft.ServerID, prevIndex uint64, timeout time.Duration,
 ) error {
 	removeFuture := n.raft.RemoveServer(id, prevIndex, timeout)
@@ -106,15 +125,15 @@ func (n *DistNode) RemoveServer(
 	return nil
 }
 
-func (n *DistNode) LeaderCh() <-chan bool {
+func (n *RaftNode) LeaderCh() <-chan bool {
 	return n.raft.LeaderCh()
 }
 
-func (n *DistNode) State() raft.RaftState {
+func (n *RaftNode) State() raft.RaftState {
 	return n.raft.State()
 }
 
-func (n *DistNode) WaitForLeader(timeout time.Duration) error {
+func (n *RaftNode) WaitForLeader(timeout time.Duration) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -129,11 +148,11 @@ func (n *DistNode) WaitForLeader(timeout time.Duration) error {
 	}
 }
 
-func (n *DistNode) HasExistingState() bool {
+func (n *RaftNode) HasExistingState() bool {
 	return atomic.LoadInt32(&n.initialized) == INITIALIZED
 }
 
-func (n *DistNode) setupRaft(dataDir string) error {
+func (n *RaftNode) setupRaft(dataDir string) error {
 	fsm := &raft.MockFSM{}
 
 	baseDir := filepath.Join(dataDir, "raft")
@@ -158,7 +177,15 @@ func (n *DistNode) setupRaft(dataDir string) error {
 	}
 
 	// snapshot storage and retrieval
-	snapshotStore := raft.NewDiscardSnapshotStore()
+	retain := 1
+	snapshotStore, err := raft.NewFileSnapshotStore(
+		baseDir,
+		retain,
+		os.Stderr,
+	)
+	if err != nil {
+		return err
+	}
 
 	maxPool := 5
 	timeout := 10 * time.Second

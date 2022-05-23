@@ -1,4 +1,4 @@
-package group
+package consensus
 
 import (
 	"fmt"
@@ -23,7 +23,7 @@ func getPort() int {
 
 func TestInitialized(t *testing.T) {
 	nodeCount := 3
-	nodes := make([]*DistNode, 0, nodeCount)
+	nodes := make([]*RaftNode, 0, nodeCount)
 
 	for i := 0; i < nodeCount; i++ {
 		bindAddr := fmt.Sprintf("127.0.0.1:%d", getPort())
@@ -67,7 +67,7 @@ func TestInitialized(t *testing.T) {
 
 func TestBootstrap(t *testing.T) {
 	nodeCount := 3
-	nodes := make([]*DistNode, 0, nodeCount)
+	nodes := make([]*RaftNode, 0, nodeCount)
 
 	for i := 0; i < nodeCount; i++ {
 		bindAddr := fmt.Sprintf("127.0.0.1:%d", getPort())
@@ -116,7 +116,7 @@ func TestBootstrap(t *testing.T) {
 
 func newTestNode(
 	t *testing.T, id int, bindAddr, dataDir string,
-) (*DistNode, error) {
+) (*RaftNode, error) {
 	ln, err := net.Listen("tcp", bindAddr)
 	require.NoError(t, err)
 
@@ -130,7 +130,7 @@ func newTestNode(
 	// just enable Bootstrap, we could check initialized or not
 	config.Raft.Bootstrap = true
 
-	node, err := NewDistNode(dataDir, config)
+	node, err := NewRaftNode(dataDir, config)
 	require.NoError(t, err)
 
 	return node, nil

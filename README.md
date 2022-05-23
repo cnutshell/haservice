@@ -31,3 +31,12 @@ The 3 selected nodes compose a raft group, and the registered service would be r
         -serf-addr=127.0.0.1:10003 \
         -serf-cluster=127.0.0.1:10001,127.0.0.1:10002,127.0.0.1:10003
 ```
+
+## TODO
+
+- [ ] Integrate service with consensus
+- [ ] Configured via toml file
+- [ ] More concise framework and library API
+- [ ] Comments for implementation
+- [ ] Member tag initialization
+- [ ] Package components seperation

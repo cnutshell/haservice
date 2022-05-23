@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnutshell/haservice/group"
+	"github.com/cnutshell/haservice/consensus"
 	"github.com/cnutshell/haservice/member"
 
 	"github.com/hashicorp/raft"
@@ -55,7 +55,7 @@ func main() {
 }
 
 type Agent struct {
-	node   *group.DistNode
+	node   *consensus.RaftNode
 	member *member.Member
 }
 
@@ -73,6 +73,7 @@ func NewAgent(id, raftAddr, raftData, serfAddr, cluster string) (*Agent, error) 
 	memberConf := member.Config{
 		NodeName:  id,
 		BindAddr:  serfAddr,
+		RpcAddr:   raftAddr,
 		JoinAddrs: strings.Split(cluster, ","),
 	}
 
@@ -87,14 +88,14 @@ func NewAgent(id, raftAddr, raftData, serfAddr, cluster string) (*Agent, error) 
 	}, nil
 }
 
-func newRaftNode(id, bindAddr, dataDir string) (*group.DistNode, error) {
+func newRaftNode(id, bindAddr, dataDir string) (*consensus.RaftNode, error) {
 	ln, err := net.Listen("tcp", bindAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	config := group.Config{}
-	config.Raft.StreamLayer = group.NewStreamLayer(ln)
+	config := consensus.Config{}
+	config.Raft.StreamLayer = consensus.NewStreamLayer(ln)
 	config.Raft.LocalID = raft.ServerID(id)
 	config.Raft.HeartbeatTimeout = 500 * time.Millisecond
 	config.Raft.ElectionTimeout = 500 * time.Millisecond
@@ -103,7 +104,7 @@ func newRaftNode(id, bindAddr, dataDir string) (*group.DistNode, error) {
 	// just enable Bootstrap, we could check initialized or not
 	config.Raft.Bootstrap = true
 
-	node, err := group.NewDistNode(dataDir, config)
+	node, err := consensus.NewRaftNode(dataDir, config)
 
 	return node, nil
 }

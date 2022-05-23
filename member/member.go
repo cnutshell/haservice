@@ -10,7 +10,7 @@ import (
 const RPC_ADDR = "rpc_addr"
 
 type EventHandler interface {
-	OnJoin(member serf.Member, rpcAddr string) error
+	OnJoin(name, addr string, tags map[string]string) error
 	OnLeave(serf.Member) error
 	OnUpdate(serf.Member) error
 }
@@ -18,6 +18,7 @@ type EventHandler interface {
 type Config struct {
 	NodeName  string
 	BindAddr  string
+	RpcAddr   string
 	Tags      map[string]string
 	JoinAddrs []string
 }
@@ -43,7 +44,7 @@ func NewMember(config Config, handler EventHandler, logger *zap.Logger) (*Member
 	}
 
 	m.Tags = map[string]string{
-		RPC_ADDR: config.BindAddr,
+		RPC_ADDR: m.RpcAddr,
 	}
 
 	err := m.setupSerf()
@@ -152,7 +153,9 @@ func (m *Member) handleUpdate(member serf.Member) {
 
 // TODO: make rpc address a parameter
 func (m *Member) handleJoin(member serf.Member) {
-	if err := m.handler.OnJoin(member, member.Tags[RPC_ADDR]); err != nil {
+	if err := m.handler.OnJoin(
+		member.Name, member.Tags[RPC_ADDR], member.Tags,
+	); err != nil {
 		m.logError(err, "fail to join", member.Name)
 	}
 }
